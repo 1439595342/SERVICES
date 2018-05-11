@@ -1,0 +1,314 @@
+
+回顾 ——
+DNS智能解析（Split View）
+1）主配置文件 /etc/named.conf
+view  "类别1"  {
+	match-clients  { 第一类客户机地址; .. .. ;  };
+	zone  "XX区域名"  {
+		type  master;
+		file  "/var/named/地址库文件1"
+	};
+};
+view  "类别2"  {
+	match-clients  { 第二类客户机地址; .. .. ;  };
+	zone  "XX区域名"  {
+		type  master;
+		file  "/var/named/地址库文件2"
+	};
+};
+view  "默认类别"  {
+	match-clients  { any;  };
+	zone  "XX区域名"  {
+		type  master;
+		file  "/var/named/地址库文件n"
+	};
+};
+2）地址库文件
+# vim   /var/named/地址库文件1
+.. ..
+www		A	IP地址1
+# vim   /var/named/地址库文件2
+.. ..
+www		A	IP地址2
+# vim   /var/named/地址库文件n
+.. ..
+www		A	默认IP地址
+
+
+测试向指定的DNS服务器查询XX域名的IP地址：
+# host  XX域名    DNS服务器
+或者
+# nslookup  XX域名    DNS服务器
+
+
+常用的公共DNS：
+202.106.0.20
+114.114.114.114
+8.8.8.8 （谷歌）
+9.9.9.9 （IBM）
+1.1.1.1 （国外X公司）
+
+!!! DNS配置常见问题
+1）拼写错误（多使用检查工具）
+2）有冲突的服务（pkill  -9  dnsmasq）
+3）地址库文件的权限（如果是cp模板文件，别忘了 -p 选项）
+
+RAID磁盘阵列 （多块磁盘 --》一块磁盘）——
+RAID0，条带模式，提高速度
+RAID1，镜像模式，提高可靠性
+RAID10，条带+镜像模式，提高速度和可靠性
+RAID5，均衡模式，提高速度/可靠性（性价比更好），使用1块容错盘
+RAID6，优化版的RAID5，使用2块容错盘
+
+
+进程管理 ——
+通过查看进程来了解系统的运行状态：
+pstree  -ap 或  pstree  PID  	【进程树】
+ps  aux 或 ps  -elf  			【用户、%CPU、%MEM等】
+top  -d  秒数 				【系统负载、资源占用排名】
+pgrep  -l  关键词
+pgrep   -U  用户名
+
+控制进程：
+cmd  &  
+Ctrl  z  暂停当前进程并放入后台
+jobs  -l 	列出当前用户当前命令行环境的后台任务
+Ctrl  c   终止当前进程
+kill  -9  PID...
+killall  -9  进程名...
+killall  -9  -u  用户名
+pkill  -9  关键词
+pkill  -9  -U  用户名
+xkill
+
+man  命令名   ==》 查看命令用法手册页
+# man  kilall  
+man  配置文件名  ==》 查看配置文件的手册页
+# man  named.conf
+
+
+今日目标 ——
+通过网络为一批客户机自动装系统
+1）准备装机环境
+2）配置PXE装机服务器
+3）实现自动应答/无人值守
+
+
+准备装机环境 —— 
+在真机上提供软件安装源 http://192.168.4.254/rh7dvd
+1）启用httpd服务
+# systemctl  restart  httpd
+2）挂载RHEL7的ISO文件到 /var/www/html/rh7dvd
+# mkdir -p /var/www/html/rh7dvd
+# vim  /etc/fstab
+ISO文件的绝对路径	/var/www/html/rh7dvd  iso9660  defaults  0  0
+# mount  /var/www/html/rh7dvd
+# ls  /var/www/html/rh7dvd/  	//确认目录下有资源
+3）检查，确认软件源可访问
+浏览器访问 http://192.168.4.254/rh7dvd，可看到软件目录资源
+
+
+常见问题：执行mount  -a 挂载不成功
+原因：同一个镜像挂载到多个位置，如果其中一个位置已经挂载，那么在执行mount  -a时不再挂载新的位置
+解决办法：
+重起，
+或者 mount  挂载点
+或者 卸载这个设备的所有挂载点，再重新mount  -a
+
+
+DHCP服务器，为客户机动态提供IP地址相关参数
+
+
+一台计算机如何从DHCP服务器获取IP地址
+1）客户机 请求，DHCP DISCOVERY
+2）服务器 提供，DHCP OFFER
+3）客户机 选择，DHCP REQUEST 
+4）服务器 确认，DHCP ACK
+
+
+快速搭建DHCP服务器（svr7） ——
+1）装包 dhcp
+# yum  -y  install  dhcp
+2）配置
+# vim  /etc/dhcp/dhcpd.conf
+subnet  192.168.4.0  netmask  255.255.255.0 {
+	range  192.168.4.10  192.168.4.200;
+	next-server  192.168.4.7; 	//PXE装机服务器地址
+	filename  "pxelinux.0"; 		//启动文件
+}
+3）起服务 dhcpd
+# systemctl  restart  dhcpd
+4）确认监听状态
+# netstat   -anptu  |  grep  :67
+5）在客户机pc207上测试
+# dhclient  -d  eth0
+
+选项含义：
+-a，所有连接
+-n，以数字方式显示地址和端口
+-p，列出对应的进程和PID
+-t，列出TCP类型的连接
+-u，列出UDP类型的连接
+
+
+
+DHCP服务监听端口：UDP 67
+
+
+
+
+BOOTROM 启动芯片
+
+
+PXE 应用：
+方式1：远程装操作系统
+方式2：远程运行操作系统（无盘工作站）
+
+
+实现PXE网络装机 —— 
+基本条件：
+  1. DHCP地址分配服务
+  2. yum 软件源
+PXE引导配置：
+    3. 启用TFTP引导服务，提供用来启动客户机的文件资料
+1）装包、起服务
+# yum  -y  install  tftp-server
+# systemctl  restart  tftp
+2）提供网卡启动文件 pxelinux.0
+# yum  -y  install  syslinux
+# cp  /usr/share/syslinux/pxelinux.0   /var/lib/tftpboot/pxelinux.0
+
+—— 建议在客户机pc207先测试，确保可以下载
+# yum  -y  install  tftp
+!!! 测试方法：tftp  服务器地址   -c  get  文件名
+# tftp  192.168.4.7   -c  get  pxelinux.0
+# ls  -lh  pxelinux.0 			//确认下载结果
+
+3）提供用来安装XX系统的内核文件（及运行内核所需的初始化文件）
+#### 访问 http://192.168.4.254/isolinux/
+#### 找到 vmlinuz、initrd.img 文件的下载地址，复制使用
+# mkdir  /var/lib/tftpboot/rhel7
+# cd  /var/lib/tftpboot/rhel7
+# wget  http://vmlinuz文件的下载地址
+# wget  http://initrd.img文件的下载地址
+# ls  /var/lib/tftpboot/rhel7/  		//确认部署结果
+initrd.img  vmlinuz
+
+4）提供pxelinux.0启动程序的配置文件（用来显示启动菜单）
+#### 访问 http://192.168.4.254/isolinux/
+#### 找到 isolinux.cfg 文件的下载地址，复制使用
+# mkdir  /var/lib/tftpboot/pxelinux.cfg/
+# cd  /var/lib/tftpboot/pxelinux.cfg/
+# wget  http://isolinux.cfg文件的下载地址  -O  default
+# cd  /var/lib/tftpboot/
+# wget  http://vesamenu.c32图形模块支持文件的下载地址
+# wget  http://splash.png背景图片文件的下载地址
+
+# ls  /var/lib/tftpboot/ 		//确认部署结果
+isolinux.cfg  rhel7       vesamenu.c32
+pxelinux.0    splash.png
+# ls pxelinux.cfg/  				//确认菜单配置文件
+default
+
+
+
+
+!!!! TFTP服务的默认资源目录
+/var/lib/tftpboot/
+
+
+!!!! 查找哪一个软件包能够提供 XXXX 文件
+# yum  provides  "*/XXXX"
+
+    4. 提供装机菜单
+# vim  /var/lib/tftpboot/pxelinux.cfg/default
+default  vesamecu.cfg  	//菜单显示由vesa...负责
+timeout  600 			//倒计时等待时间（1/10秒）
+label  linux
+  menu label ^Install Red Hat Enterprise Linux 7.2
+  kernel rhel7/vmlinuz  				【第63行】
+  append initrd=rhel7/initrd.img   inst.stage2=http://192.168.4.254/rh7dvd  【第64行】
+
+练习：新建一台虚拟机，测试PXE网络装机的效果
+1）虚拟机定制：从网络安装、内存2G、硬盘20G、网络private1
+2）启动后能成功看到选择菜单
+3）选择第一项后，成功加载图形安装程序
+4）手动指定分区方式、软件仓库（http://192.168.4.）
+
+
+
+客户机的引导过程：
+一台需要装RHEL7系统的客户机（裸机）
+==》电源 ==》主板开机BIOS自检 ==》优先从网络启动 
+==》网卡芯片里的PXE Client程序 
+==》获取IP地址、按照DHCP指示去找TFTP服务器 
+==》向TFTP服务器索取 pxelinux.0 并下载
+==》在内存中运行 pxelinux.0
+==》从TFTP资源目录 pxelinux.cfg/default 下载到菜单配置
+==》按照default文件配置显示一个选择界面
+==》如果客户机的用户选择“Install Red Hat Enterprise Linux 7.2”，那么
+==》找TFTP服务器的 rhel7/ 目录下载内核、初始化文件
+==》在内存中运行vmlinuz内核文件，由内核获取系统控制权限
+==》根据配置的inst.stage2参数指定的位置去获取安装程序
+==》在客户机运行安装程序
+==》由安装程序主导XX系统安装过程
+
+
+kernel panic，内核 恐慌
+
+
+常见错误：
+1）配置文件 default 错写为 deafult
+2）inst.stage2指定的软件源位置写错 http://.../rhdvd
+3）DHCP服务配置中
+  subnet  192.168.4.0  netmask  254.254.254.0
+4）tftp服务没开启
+5）…… 
+
+
+NIC，Network Interface Card，网卡
+
+
+
+实现自动应答的关键配置：
+1）需要一份提前准备好的应答文件，客户机必须能够下载
+确认访问地址：http://192.168.4.254/ks-rhel7.cfg
+2）修改 default 菜单配置使用这份应答文件
+# vim  /var/lib/tftpboot/pxelinux.cfg/default
+label linux
+	.. ..
+	kernel rhel7/vmlinuz
+	append initrd=rhel7/initrd.img ks=http://1    92.168.4.254/ks-rhel7.cfg
+
+
+
+全自动裸机装配（装系统、配置系统）
+
+安装后脚本 —— 使PXE客户机在完成系统安装之后自动执行XX操作
+比如：自动配置好yum源
+# rm  -rf  /etc/yum.repos.d/*.repo
+!!!!
+### echo  'yum源配置文件内容'  >  /etc/yum.repos.d/rhel7dvd
+# echo  '[rhel7]
+name=Red Hat Enterprise Linux 7.2
+baseurl=http://192.168.4.254/rh7dvd
+gpgcheck=0'  >  /etc/yum.repos.d/rhel7.repo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

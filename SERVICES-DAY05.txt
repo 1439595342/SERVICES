@@ -1,0 +1,349 @@
+
+
+PXE网络装机，综合性比较强
+涉及到服务：dhcpd、httpd、yum、tftp
+涉及到文件：tftp
+
+
+回顾：
+1. 通过网络方式来实现安装操作系统
+—— HTTP服务端，为客户机提供软件资源
+需要的结果： http://192.168.4.254/rh7dvd
+可能遇到的问题：
+1）httpd服务器没启动
+2）防火墙及SELinux忘记关闭
+3）软件资源（RHEL7镜像文件）没有挂载成功
+4）访问地址/目录名称写错
+
+—— DHCP服务端，为客户机分配IP地址、告诉客户机需要去访问的下一个启动服务器在哪里及去找启动服务器索取一个启动文件
+1）装包 dhcp
+2）配置
+# vim  /etc/dhcp/dhcpd.conf
+subnet  网络段地址   netmask  子网掩码  {
+	range  起始IP地址    结束IP地址;
+	next-server  TFTP启动服务器的IP地址;
+	filename  "启动文件的文件名（pxelinux.0）";
+}
+3）起服务 dhcpd
+
+—— TFTP启动服务端，为客户机提供启动文件、装系统用的素材
+1）装包 tftp-server
+2）配置，提供各种素材文件（用来启动客户机、为客户机装系统）
+### 网卡启动文件，以及配套的模块文件、背景图片
+/var/lib/tftpboot/pxelinux.0
+/var/lib/tftpboot/vesamenu.c32
+/var/lib/tftpboot/splash.png
+### 决定客户机显示界面如何展示
+/var/lib/tftpboot/pxelinux.cfg/default
+
+@@@ 这些文件从哪来：
+sysliniux 软件包安装的结果文件
+# yum  provides  "*/pxelinux.0" 	
+  						【查哪个软件包能提供XX文件】
+# rpm  -ql  syslinux 	【查软件包装了哪些文件】
+XX版本光盘目录 isolinux/isolinux.cfg
+
+### XX系统安装引导文件（内核、初始化文件）
+/var/lib/tftpboot/rhel7/vmlinuz
+/var/lib/tftpboot/rhel7/initrd.img
+/var/lib/tftpboot/rhel6/vmlinuz
+/var/lib/tftpboot/rhel6/initrd.img
+.. .. 
+
+@@@ 这些文件从哪来：
+找XX版本系统的光盘目录 isolinux/
+
+3）起服务 tftp
+
+
+
+关于客户机的PXE启动菜单的显示：
+手动安装 —— 
+# vim  /var/lib/tftpboot/pxelinux.cfg/default
+63 kernel rhel7/vmlinuz
+64 append initrd=rhel7/initrd.img  inst.stage2=http://192.168.4.254/rh7dvd
+
+
+
+2. 让网络装机的过程能够自动完成
+无人值守安装 —— 
+# vim  /var/lib/tftpboot/pxelinux.cfg/default
+63 kernel rhel7/vmlinuz
+64 append initrd=rhel7/initrd.img ks=http://192.168.4.254/ks-rhel7.cfg
+
+准备工作：
+1）提前准备一份可用的应答文件 ks-rhel7.cfg
+# system-config-kickstart 
+
+!!!! 
+先装system-config-kickstart包
+修改 yum源的id，设为 [development]
+
+2）确保从客户机 http://192.168.4.254/ks-rhel7.cfg 能够访问第1）步准备的这一份应答文件
+
+
+
+TFTP+DHCP启动服务器备份与恢复 ——
+备份：
+# tar  -zcPf  /opt/pxeconf.tar.gz  /var/lib/tftpboot/  /etc/dhcp/dhcpd.conf
+
+恢复：
+# yum  -y  install  dhcp  tftp-server
+# tar  -xPf   /opt/pxeconf.tar.gz
+# systemctl  restart  dhcpd  tftp
+
+
+
+关于客户机的PXE启动菜单的显示（补充）：
+# vim  /var/lib/tftpboot/pxelinux.cfg/default
+default vesamenu.c32 			//支持图形显示
+timeout 600 						//等待超时60秒
+menu background  splash.png  	//背景图片
+menu title 菜单标题文字
+label 启动项1的ID
+  menu label 启动项1显示的文字
+  kernel 内核文件vmlinuz的相对路径
+  append initrd=初始化文件initrd.img的相对路径 .. ..
+label centos7
+  menu label Install ^CentOS 7.4  	//^定义快捷键
+  kernel centos7/vmlinuz
+  append initrd=centos7/initrd.img .. .. 
+label local
+  menu label Boot from ^local drive
+  menu default
+  localboot 0xffff
+
+
+配置default文件时，可以使用 ^ 来定义快捷键，加载menu  label 后面的显示文件内的某一个字母前面
+
+vim末行模式，删除连续的多行文本 ——
+:73,114d
+
+
+
+
+
+应用场景：
+DNS轮询、分离解析，==》
+同一个域名www.tedu.cn，有多个IP地址/服务器
+
+rsync 同步操作 ——
+保持 主机1的目录1    主机2的目录2  的内容要一致
+
+
+# rsync  目录1   目录2
+
+同步与复制（cp、scp）命令不一样
+
+假设目录1的大小是500M，
+执行 cp、scp 复制时，也需要传输500M数据到 目录2
+执行 rscyn 同步时，只传输目录2中没有/不一样的数据
+
+假设 目录1 增加/修改了 5M，
+
+
+本地同步 ——
+# rsync [选项...] 本机目录1    本机目录2
+
+rsync+sshd远程同步 ——
+浏览远程目录资源：
+# rsync  远程用户@远程主机地址:远程目录/
+
+上传（上行同步）：
+# rsync [选项...] 本机目录1   远程用户@远程主机地址:远程目录2
+下载（下行同步）：
+# rsync [选项...] 远程用户@远程主机地址:远程目录1  本机目录2
+
+
+请思考：从远程主机获取一个文件有哪些方式？
+U盘、电子邮件、httpd、ftp、nfs、samba、scp、rsync、……
+
+
+
+同步的含义 —— 两边数据要完全一样（时间、属性、去除多余文档）
+# rsync  -az  --delete  目录1/   目录2
+
+
+统计目录占用的空间大小
+# du  -sh  /etc
+
+
+由管理员手动执行rsync同步操作
+
+通过计划任务定期执行rsync同步操作（间隔时间）
+
+实时/触发同步 —— 当目录1的内容变化时，马上执行同步到目录2
+
+
+需要安装 inotify-tools
+
+练习：inotify+rsync 实时同步 ——
+目录1：svr7上的 /var/www/html/
+目录2：pc207上的 /var/www/html/
+效果：当svr7上的目录内容变化时，pc207上也会立即做相应的变化
+
+在CentOS7真机上，获取安装文件并上传给虚拟机svr7 ——
+# wget 
+http://172.40.50.113/tools/inotify-tools-3.13.tar.gz
+# scp inotify-tools-3.13.tar.gz 192.168.4.7:/root
+
+在虚拟机svr7上 ——
+1）安装 inotify-tools 软件包
+# yum  -y  install  gcc 		//准备编译环境【厨房】
+# tar  -xf  inotify-tools-3.13.tar.gz  -C  /usr/src/
+# cd  /usr/src/inotify-tools-3.13/
+# ./configure  				//配置【准备几颗鸡蛋.. ..】
+# make						//编译【炒菜】
+# make  install  			//安装【装盘上桌】
+
+# inotifywait  --help 		//确认安装结果（命令可用）
+
+2）学会使用 inotifywait 命令来实现监控
+# inotifywait  -rq  -e  create,move,delete,modify,attrib  目录1/
+
+3）inotifywait+rsync结合，实现实时同步
+
+当  XXXX的时候
+do
+	做YYYY操作
+done
+
+while  目录1的内容有变化的时候
+do
+	rsync  ...  目录1/   目录2
+done
+
+
+while  inotifywait  -rq  -e  create,move,delete,modify,attrib  目录1/
+do
+	rsync  ...  目录1/   目录2
+done
+
+
+[root@svr7 ~]# cat /root/isync.sh 
+#!/bin/bash
+while  inotifywait  -rq  -e  create,move,delete,modify,attrib  /opt/
+do
+	rsync  -az  --delete  /opt/   /opt2
+done &
+
+
+
+!!!! 实现SSH免密码登录
+实现方式：提前部署一个密钥文件到远程机器
+1）在 svr7 生成密钥文件
+===> 先检查是否已经有密钥文件
+# ls  ~/.ssh/id*
+===> 如果没有密钥文件，那么再生成（否则跳过此步）
+# ssh-keygen 				//根据提示确认3次
+
+2）把密钥部署给远程的机器 pc207
+# ssh-copy-id  root@192.168.4.207
+
+3）验证结果（在 svr7 上远程登 pc207 不需要密码）
+# ssh  root@192.168.4.207
+.. .. 不需要密码直接登录成功  
+
+
+
+客户机svr7上的用户A创建密钥，并且部署给pc207的用户B、部署给pc208的用户C
+
+最终实现的效果：
+在svr7上的用户A 可以执行  ssh  B@pc207 ，免密码
+在svr7上的用户A 可以执行  ssh  C@pc208 ，免密码
+
+
+1）在svr7上编写/root/isync.sh实时同步脚本
+#!/bin/bash
+mulu1="/var/www/html/"
+tongbu="rsync  -az  --delete  /var/www/html/   root@192.168.4.207:/var/www/html"
+while  inotifywait  -rqq  -e  create,move,delete,modify,attrib  $mulu1
+do
+        $tongbu
+done &
+2）为脚本添加执行权限
+# chmod  +x  /root/isync.sh
+3）执行脚本并测试
+# /root/isync.sh 
+.. .. 修改svr7上/var/www/html/目录内容，观察pc207变化
+!!!! 需要停止实时同步时，pkill  -9  inotifywait
+
+
+!!!! inotifywait的小bug
+当被监控目录下有子目录被删除时，会导致 inotifywait 退出
+
+
+
+日志管理（日记管理）  
+—— 通过去查看系统/程序/服务的日记来了解发生了什么事，从而可以排查错误、获取证据
+
+常见的日志文件有哪些？ ——
+内核/系统日志：文本文件，记录格式类似
+/var/log/messages —— 公共日志文件（所有系统服务可以记录）
+/var/log/cron —— 计划任务配置及执行相关的消息
+/var/log/secure —— 安全认证相关的消息
+
+练习：分析内核/系统日志
+1）故意改错 /etc/named.conf 文件
+查看日志文件 /var/log/messagese 末尾的内容
+2）编辑一个计划任务，内容任意
+查看日志文件 /var/log/cron 末尾的内容
+3）远程连接svr7，以一个不存在的用户或错误的密码验证
+查看日志文件 /var/log/secure 末尾的内容
+
+熟悉常见的计算机专业英语单词 ——
+error：错误的
+failed：失败的
+unknown：未知的
+incorrect：不正确的
+invalid：无效的
+successful：成功的
+……
+
+
+常见的用户日志文件有哪些？ ——
+用户日志：二进制文件
+
+练习：分析用户登录情况
+1）查看当前有哪些用户登录、在做什么操作
+users，列出登录的用户名
+who，列出登录用户名、来源
+w，列出系统负载、登录用户名、来源 、在执行的命令、……
+2）了解过去有哪些用户登录过
+last  -2  [用户名]
+3）了解过去有哪些用户登录失败过
+lastb  -2  [用户名]
+
+
+练习：实时跟踪日志文件的变化（tailf）
+# tailf   /var/log/maillog
+.. .. 新增的日志内容会立即显示出来
+
+
+练习：筛选日志内容（journalctl）
+筛选方式：关键词、系统服务、条数、重要程度、日志产生的时间段
+# journalctl  |  grep  8909
+# journalctl  -u  httpd
+# journalctl  -n  记录的数量
+# journalctl  -p  重要程度
+# journalctl  --since="起始时间"  --until="结束时间"
+
+
+!!! 添加 --no-pager 阻止左右分屏
+!!! 提示：按 q 退出
+
+
+
+今日重点：
+1）理解远程同步的含义
+2）掌握 rsync+ssh 远程同步操作
+3）了解常见的日志文件，学会通过查看这些日志来找出问题原因
+
+
+
+
+
+rootkit 一套伪造过的系统命令
+
+
+

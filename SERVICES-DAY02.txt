@@ -1,0 +1,278 @@
+
+  曾 晔
+
+   浏览器 http：//172.40.50.113/note
+  vncviewer  172.40.50.113:7000
+
+   classroom
+
+提前搭建实验环境：
+svr7.tedu.cn ==》 192.168.4.7/24
+pc207.tedu.cn ==》 192.168.4.207/24
+
+svr7作为主要的DNS服务器
+pc207作为测试用的客户机
+
+
+  路由器，只认识IP地址，不认识 www.baidu.com
+
+
+
+ 网站 www.baidu.com 的IP地址在哪里？
+
+ 问某个DNS服务器 类似于 114查号台
+
+注册一个域名  zylinux.cn，
+获得的权利：
+    决定 *.zylinux.cn 的IP地址是多少
+
+
+   我的Web服务器 放在 某一个电信机房，IP地址  60.72.83.94
+添加一个 www.zylinux.cn ==》60.72.83.94
+
+
+
+域名注册费用，XXX元/年
+
+360buy.com ==》 jd.com
+oicq.com ==》tencent.com
+
+搭建DNS服务器的基本步骤 ——
+1. 装包
+# yum  -y  install   bind   bind-chroot
+
+2. 配置
+主配置文件 /etc/named.conf 【管理哪些区域、地址库文件在哪】
+# cat  /etc/named.conf 
+options { directory  "/var/named"; };
+zone  "tedu.cn"  {
+	type  master;           
+	file  "tedu.cn.zone";
+};
+# named-checkconf 		【若配置正确，无任何输出】
+
+地址库（区域数据）文件： /var/named/自定义文件名
+# vim  /var/named/tedu.cn.zone
+.... // 文件头参考 named.localhost 文件的内容复制过来
+@  	NS	svr7.tedu.cn.
+www  	A	192.168.4.100
+svr7  	A	192.168.4.7
+pc207  	A	192.168.4.207
+
+# named-checkzone  tedu.cn   /var/named/tedu.cn.zone
+zone tedu.cn/IN: loaded serial 0
+OK
+
+
+chroot 切换根目录（提供一个伪造的根）【笼环境】
+==》把 /var/named/chroot/ 目录当成 / 根目录
+
+
+把192.168.4.7配置为 tedu.cn 区域的DNS服务器
+www.tedu.cn  ===》 192.168.4.100
+svr7.tedu.cn  ===》 192.168.4.7
+pc207.tedu.cn  ===》 192.168.4.207
+
+
+
+
+一个服务器的IP地址，为它注册多个域名
+
+
+www.tedu.cn
+www.tmooc.cn
+www.tarena.com.cn
+tts8.tmooc.cn
+.. ..
+
+
+3. 起服务（在svr7上，!!! 关闭防火墙）
+# systemctl  restart  named
+
+客户机测试（在pc207主机上查询DNS ——
+1）为客户机指定默认DNS
+# nmcli  con  mod  eth0  ipv4.dns  192.168.4.7
+# nmcli  con  up  eth0
+2）测试DNS查询结果
+# host   www.tedu.cn
+www.tedu.cn has address 192.168.4.100
+  					//地址库里有记录的可以查到结果
+# host wwww.tedu.cn
+Host wwww.tedu.cn not found: 3(NXDOMAIN)
+  					//地址库里没有记录的查不到结果
+
+
+互联网网站访问 www.tedu.cn 场景：
+1）浏览器（客户机）—— 192.168.4.7
+a. 输入 http://www.teud.cn/ 并回车
+b. 浏览器向DNS查询“www.tedu.cn 的IP地址是多少？”
+c. 封装一个HTTP访问请求发给目标IP地址 192.168.4.100
+d. 收到来自网站服务器提供的网页
+
+2）DNS服务器（新网）—— 192.168.4.7
+a. 收到来自客户机的查询请求
+b. 检查客户机的问题是否属于自己管理的DNS区域（地址库内查找是否有一条 www 的A类型的记录）
+c. 告诉客户机 www.tedu.cn 的IP地址（192.168.4.100）
+
+3）网站服务器（达内）—— 192.168.4.100
+付费注册DNS域名  —— 让DNS服务器告诉其他任何客户机“www.tedu.cn 的IP地址是 192.168.4.100”
+
+a. 收到来自浏览器提交的HTTP访问请求
+b. 由本机的Web服务程序来处理这个HTTP访问请求
+c. 按照浏览器的请求提供相应的网页
+
+
+
+DNS轮询（负载均衡）—— 比如百度、网易、……
+特点：同一个域名 --> 多个IP地址
+
+www.tedu.cn  --> 
+192.168.4.100 可以承受 10000个用户同时访问
+192.168.4.110  +10000并发负载能力
+192.168.4.120  +10000并发负载能力
+
+实现DNS轮询的关键：修改所在地址库的解析记录
+www  	A	192.168.4.100
+www  	A	192.168.4.110
+www  	A	192.168.4.120
+
+
+泛域名解析 —— 
+特点：多个域名（后缀相同） --> 同一个IP地址
+www.jd.com
+或者 jd.com
+
+3w.jd.com
+sanw.jd.com
+当用户访问一个域名时，只要后缀是正确的，都能够找到正确的网站
+
+实现泛域名解析的关键：修改所在地址库的解析记录
+*  	A	192.168.4.100  
+
+
+
+
+DNS服务器 ：. 		根域（上级域）
+
+DNS服务器 ：.cn 		一级（上级域）
+
+DNS服务器 svr7：tedu.cn 		二级（上级域）
+	www.tedu.cn	192.168.4.100
+
+DNS服务器 pc207：bj.tedu.cn 	三级（下级域）
+	www.bj.tedu.cn	1.2.3.4
+
+
+亲密/疏远：
+属于同一个机构管理的上下级区域，一般称为 父子域
+
+子域授权配置关键（修改父区域地址库）：
+子域域名.            NS 	子DNS的FQDN.
+子DNS的FQDN.  A		子DNS的IP地址
+
+
+当一台DNS服务器（tedu.cn）收到一个查询非本DNS管辖的域名（www.bj.tedu.cn）的请求时 ——
+情况1：未配置子域授权，告诉客户机“not found”
+情况2-父子域（递归查询）：配置了子域授权，帮客户机去查询并把结果告诉客户机
+情况3-上下级域（迭代查询）：配置了子域授权，不愿意/不方便帮客户机去查询结果，但是会告知客户机应该去问另一个DNS服务器
+
+
+
+缓存DNS服务器（比如教学环境CentOS真机 192.168.4.254）
+1）能正常上网（至少能查询各种域名）
+2）客户机（比如pc207）必须能正常访问本DNS
+
+实现过程 —— 
+0）简单准备工作
+停用与DNS服务冲突的其他服务（dnsmasq）
+# pkill  -9  dnsmasq
+1）装包 bind  bind-chroot
+2）配置（指向可用的公共DNS服务器地址）
+# vim  /etc/named.conf
+options {  forwarders {  172.40.1.10;  }; };
+3）起服务 named
+
+客户机测试：
+# host  www.qq.com   192.168.4.254
+
+
+
+今日重点：
+1）理解DNS的作用
+2）搭建基本的DNS服务器
+3）客户机如何使用指定的DNS
+4）缓存DNS怎么部署
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

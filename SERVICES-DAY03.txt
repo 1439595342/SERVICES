@@ -1,0 +1,240 @@
+
+
+回顾 ——
+1）理解DNS系统的作用
+2）学会搭建一台权威DNS服务器
+3）学会使用DNS服务器
+4）学会搭建一台缓存DNS服务器
+
+
+1）理解DNS系统的作用
+互联网的指路人，提供信息查询“网站域名 --》IP地址”
+
+知道一个www.baidu.com的IP地址
+不等于
+能访问 www.baidu.com 的网页
+
+FQDN，完全合格的域名 ==》互联网的一个服务器的DNS地址
+www.pku.edu.cn
+www 站点名（对应一台服务器）
+pku.edu.cn 区域名（对应一个公司/单位/机构/组织）
+
+
+2）学会搭建一台权威DNS服务器
+为 tedu.cn 区域提供域名解析（意思：当有其他客户机来问你这台DNS服务器 “以 tedu.cn 结尾的那些域名的IP地址是多少”时，你这台DNS应该能提供正确的答案）
+svr7.tedu.cn 的 IP地址是 192.168.4.7
+pc207.tedu.cn 的 IP地址是 192.168.4.207
+www.tedu.cn 的 IP地址是 192.168.4.100
+
+配置关键：
+# vim  /etc/named.conf 	【负责的区域、地址库文件在哪】
+options {
+	directory  "存放地址库文件的默认目录";
+};
+zone  "区域1名"  {
+	type  master;
+	file  "地址库1文件名";
+};
+zone  "区域2名"  {
+	type  master;
+	file  "地址库2文件名";
+};
+
+# vim  /.../地址库文件名 	【XX站点的IP地址是多少？】
+文件头（参考模板文named.localhost件复制）
+@		NS	本DNS服务器的FQDN.
+站点1名 	A	站点1的IP地址
+站点2名 	A	站点2的IP地址
+.. ..
+
+
+3）学会使用DNS服务器
+为Linux主机指定默认使用哪一台DNS服务器：
+# nmcli  con  mod  "连接名"  ipv4.dns  DNS服务器的IP地址
+# nmcli  con  mod  up  "连接名" 		【永久】
+# vim  /etc/resolv.conf  	 		【临时】
+nameserver  DNS服务器的IP地址
+测试DNS服务器时可以手动临时指定使用哪一台DNS服务器：
+# host   XX域名    DNS服务器的IP地址
+
+4）学会搭建一台缓存DNS服务器
+前提条件：
+1）客户机能访问到缓存DNS
+2）缓存DNS服务器能够正常访问其他的可用的公共DNS
+
+配置关键：
+# vim  /etc/named.conf
+options  {
+	forwarders { 公共DNS的IP地址; };
+};
+
+
+DNS的子域授权 ——
+告诉上一级DNS服务器：
+子域叫什么名，负责子域内站点解析的下一级DNS服务器的FQDN.
+下一级DNS服务器的FQDN. 的IP地址是多少
+
+对于上一级DNS服务器来说，
+如果 子域授权+ 愿意为客户机查询非本机管理的域名 ==》递归（缓存DNS服务器）
+如果 子域授权+ 不愿意为客户机查询非本机管理的域名 ==》迭代（有下级子域权威DNS）
+
+recursion yes|no;
+
+
+DNS地址库的特殊应用 ——
+
+DNS轮询，一个域名解析为多个IP地址
+# vim  地址库文件
+.. ..
+www		A	 IP地址1
+www		A	 IP地址2
+www		A	 IP地址3
+
+泛域名，多个未知域名解析为同一个IP地址
+# vim  地址库文件
+.. ..
+*		A		IP地址
+
+
+练习：扩展DNS服务器 svr7的功能
+除了负责 tedu.cn 区域以外，
+还能够为教学环境的 example.com 提供域名解析服务
+实验目标（提供解析结果）：
+classroom.example.com ==》172.25.254.254
+content.example.com ==》172.25.254.254
+server0.example.com ==》172.25.0.11
+www0.example.com ==》172.25.0.11
+webapp0.example.com ==》172.25.0.11
+desktop0.example.com ==》172.25.0.10
+smtp0.example.com ==》172.25.0.10
+
+在服务器svr7上：
+1）调整主配置
+[root@svr7 ~]# vim  /etc/named.conf
+options {
+        directory  "/var/named";
+};
+zone  "tedu.cn"  {
+        type  master;
+        file  "tedu.cn.zone";
+};
+zone  "example.com"  {
+        type  master;
+        file  "example.com.zone";
+};
+
+2）建地址库
+[root@svr7 ~]# cd /var/named/
+[root@svr7 named]# cp -p tedu.cn.zone  example.com.zone
+[root@svr7 named]# vim example.com.zone 
+.. ..
+@       NS      svr7.tedu.cn.
+classroom 	A  172.25.254.254
+content 	A  172.25.254.254
+server0 	A  172.25.0.11
+www0 		A  172.25.0.11
+webapp0 	A  172.25.0.11
+desktop0 	A  172.25.0.10
+smtp0 		A  172.25.0.10
+3）起服务
+[root@svr7 named]# systemctl restart named
+
+
+两个问题：
+1）options全局设置只需要一段 
+2）为什么 example.com 区域的NS记录还是 svr7.tedu.cn. 【一个DNS服务器管理多个区域时，没必要在每一个区域都注册一个域名】
+
+今日目标：
+1）理解分离解析原理，并通过实验验证
+2）了解RAID阵列的几种方式和各自的特点
+3）学会查看和控制系统的进程信息
+4）学会通过日志去了解系统或服务发生的事件
+
+
+场景1：
+www.12306.cn
+==》 IP地址1（联通）、IP地址2（移动）、IP地址3（电信）、……
+
+
+当一个联通宽带用户访问 www.12306.cn 时，面临的问题？
+单纯的DNS轮询难以解决
+
+需要DNS更加智能 —— 
+1）当联通的客户机来访问www.12306.cn，告诉客户机IP地址1
+2）当移动的客户机来访问www.12306.cn，告诉客户机IP地址2
+1）当电信的客户机来访问www.12306.cn，告诉客户机IP地址3
+
+
+智能DNS（Split分离解析）
+
+
+Content  Delivery Network，内容分发网络
+铁道部：负责提供Web网站/数据库内容，假设 2 台
+CDN服务商（蓝汛）：负责为铁道部在全国部署200台缓存服务器，由这些缓存服务器面向购票用户
+购票用户：===》CDN服务商的缓存服务器
+
+铁道部成本降低
+CDN服务商赚钱
+用户访问速度块
+
+CDN服务商需要做的事情：
+当用户查询www.12306.cn时，把客户机引导到最近/最快的那一台缓存服务器上
+
+配置关键步骤：
+1）建立2份地址库
+/var/named/tedu.cn.zone.1 【www  ==》192.168.4.100】
+/var/named/tedu.cn.zone.2 【www  ==》1.2.3.4】
+
+2）在 /etc/named.conf 创建2个视图
+options {
+        directory  "/var/named";
+};
+view  "mylan" {  			//第1个视图设置
+        match-clients { 192.168.4.207; 192.168.7.0/24;  };
+        zone "tedu.cn" {
+                type  master;
+                file "tedu.cn.zone.1";
+        };
+};
+view  "other" {  			//第2个视图设置
+        match-clients { any;  };
+        zone "tedu.cn" {
+                type  master;
+                file "tedu.cn.zone.2";
+        };
+}; 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
